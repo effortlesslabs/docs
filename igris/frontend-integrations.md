@@ -19,7 +19,7 @@ The Intent Parser uses Server-Sent Events to provide real-time updates during th
 ## API Endpoint
 
 ```
-POST https://igris-engine.hyperbola.network/api/intent-parser/sse
+POST https://igris-engine.hyperbola.network/v1/intent-parse/sse
 Content-Type: application/json
 Authorization: Bearer <YOUR_API_KEY>
 ```
@@ -51,7 +51,7 @@ interface ChatMessage {
 ### Example Request
 
 ```typescript
-const response = await fetch('https://igris-engine.hyperbola.network/api/intent-parser/sse', {
+const response = await fetch('https://igris-engine.hyperbola.network/v1/intent-parse/sse', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -400,7 +400,7 @@ class IntentParserClient {
   private eventSource: EventSource | null = null;
 
   async startParsing(request: IntentParserRequest): Promise<void> {
-    const response = await fetch('https://igris-engine.hyperbola.network/api/intent-parser/sse', {
+    const response = await fetch('https://igris-engine.hyperbola.network/v1/intent-parse/sse', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -549,7 +549,7 @@ export function useIntentParser(options: UseIntentParserOptions) {
     setError(null);
 
     try {
-      const response = await fetch('/api/intent-parser/sse', {
+      const response = await fetch('v1/intent-parse/sse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request)
@@ -648,7 +648,7 @@ export function useIntentParser() {
     error.value = null;
 
     try {
-      const response = await fetch('/api/intent-parser/sse', {
+      const response = await fetch('v1/intent-parse/sse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request)
