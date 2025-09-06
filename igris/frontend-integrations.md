@@ -35,17 +35,10 @@ Authorization: Bearer <YOUR_API_KEY>
 ```typescript
 interface IntentParserRequest {
   input: string;                    // Required: User input text
-  chatHistory?: ChatMessage[];      // Optional: Previous conversation context
   wallets?: string[];               // Optional: Available wallet addresses
+  sessionId?: string;               // Optional: Session ID for maintaining conversation context
 }
 
-interface ChatMessage {
-  content: string;                  // Message content
-  type: 'human' | 'ai'              // Message type
-  role?: string;                    // Optional role identifier
-  timestamp?: string;               // Optional timestamp
-  metadata?: Record<string, any>;   // Optional additional data
-}
 ```
 
 ### Example Request
@@ -59,14 +52,8 @@ const response = await fetch('https://igris-engine.hyperbola.network/v1/intent-p
   },
   body: JSON.stringify({
     input: "Swap 100 USDC to ETH",
-    chatHistory: [
-      {
-        content: "I want to swap some tokens",
-        type: "human",
-        timestamp: "2024-01-15T10:30:00Z"
-      }
-    ],
-    wallets: ["0x1234...", "0x5678..."]
+    wallets: ["0x1234...", "0x5678..."],
+    sessionId: "your-session-id-here" // Optional: Include for conversation context
   })
 });
 ```
@@ -90,7 +77,7 @@ The SSE stream delivers several types of events that your frontend should handle
 **Key Points for Frontend Developers:**
 - Token selection events are **NOT final responses**
 - **Always make a new API call** after user selects a token
-- Include the selection in `chatHistory` for context
+- The system will automatically maintain context through the session ID
 - Specify the network when making selections (e.g., "ETH on ethereum", "USDC on base")
 - The flow continues automatically after token selection
 - Final result is always `EXECUTE_ROUTE` with complete swap information
@@ -227,7 +214,7 @@ enum Network {
 **Important Flow Information**: 
 - **This is NOT the final step** - it's an intermediate step requiring user input
 - **Frontend must make a NEW API call** after user selects a token
-- **Include the selection in chatHistory** for context
+- **The system will automatically maintain context through the session ID**
 - **Specify the network** when making the selection (e.g., "ETH on ethereum")
 
 **Complete Flow After Token Selection:**
@@ -249,7 +236,7 @@ onTokenSelected(selectedToken) {
   // Make new API call with selection
   const newRequest = {
     input: `I want to get 100 USDC using ${selectedToken.symbol} on ${selectedToken.network}`,
-    chatHistory: [...existingHistory, userSelection],
+    // Session context is automatically maintained
     wallets: wallets
   };
   
@@ -277,7 +264,7 @@ onTokenSelected(selectedToken) {
 **Important Flow Information**: 
 - **This is NOT the final step** - it's an intermediate step requiring user input
 - **Frontend must make a NEW API call** after user selects a token
-- **Include the selection in chatHistory** for context
+- **The system will automatically maintain context through the session ID**
 - **Specify the network** when making the selection (e.g., "USDC on base")
 
 **Complete Flow After Token Selection:**
@@ -299,7 +286,7 @@ onDestinationTokenSelected(selectedToken) {
   // Make new API call with selection
   const newRequest = {
     input: `${selectedToken.symbol} on ${selectedToken.network}`,
-    chatHistory: [...existingHistory],
+    // Session context is automatically maintained
     wallets: wallets
   };
   
@@ -391,6 +378,22 @@ Error handling and connection issues.
 
 **Usage**: Display error messages and provide retry options.
 
+
+### 5. Session Info Events
+
+Session management and identification.
+
+```typescript
+{
+  type: 'session_info',
+  sessionId: string
+}
+```
+
+**Usage**: Receive the session ID after streaming is complete. This session ID should be included in future requests to maintain conversation context across multiple API calls.
+
+**Important**: This event is sent at the end of each successful parsing session. Store the `sessionId` and include it in subsequent requests to maintain conversation context.
+
 ## Implementation Examples
 
 ### Basic SSE Client Implementation
@@ -398,15 +401,22 @@ Error handling and connection issues.
 ```typescript
 class IntentParserClient {
   private eventSource: EventSource | null = null;
+  private currentSessionId: string | null = null;
 
   async startParsing(request: IntentParserRequest): Promise<void> {
+    // Include sessionId if available
+    const requestWithSession = {
+      ...request,
+      sessionId: request.sessionId || this.currentSessionId
+    };
+
     const response = await fetch('https://igris-engine.hyperbola.network/v1/intent-parse/sse', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Authorization': 'Bearer YOUR_API_KEY_HERE' // Replace with your actual API key
       },
-      body: JSON.stringify(request)
+      body: JSON.stringify(requestWithSession)
     });
 
     if (!response.ok) {
@@ -452,6 +462,9 @@ class IntentParserClient {
       case 'error':
         this.handleError(event);
         break;
+      case 'session_info':
+        this.handleSessionInfo(event);
+        break;
     }
   }
 
@@ -491,6 +504,11 @@ class IntentParserClient {
     this.showError(event.message, event.error);
   }
 
+  private handleSessionInfo(event: any): void {
+    this.currentSessionId = event.sessionId;
+    this.onSessionIdReceived?.(event.sessionId);
+  }
+
   // UI methods - implement based on your framework
   private showLoader(message: string): void {
     // Show loading indicator
@@ -523,6 +541,14 @@ class IntentParserClient {
   private showError(message: string, error: string): void {
     // Show error with details
   }
+
+  // Callback for when session ID is received
+  public onSessionIdReceived?: (sessionId: string) => void;
+
+  // Getter for current session ID
+  public getCurrentSessionId(): string | null {
+    return this.currentSessionId;
+  }
 }
 ```
 
@@ -538,21 +564,29 @@ interface UseIntentParserOptions {
   onAIMessage?: (message: string) => void;
   onError?: (message: string, error?: string) => void;
   onChatChunk?: (text: string, runId: string) => void;
+  onSessionIdReceived?: (sessionId: string) => void;
 }
 
 export function useIntentParser(options: UseIntentParserOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const startParsing = useCallback(async (request: IntentParserRequest) => {
     setIsLoading(true);
     setError(null);
 
     try {
+      // Include sessionId if available
+      const requestWithSession = {
+        ...request,
+        sessionId: request.sessionId || sessionId
+      };
+
       const response = await fetch('v1/intent-parse/sse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
+        body: JSON.stringify(requestWithSession)
       });
 
       if (!response.ok) {
@@ -623,13 +657,18 @@ export function useIntentParser(options: UseIntentParserOptions) {
       case 'error':
         options.onError?.(event.message, event.error);
         break;
+      case 'session_info':
+        setSessionId(event.sessionId);
+        options.onSessionIdReceived?.(event.sessionId);
+        break;
     }
   }, [options]);
 
   return {
     startParsing,
     isLoading,
-    error
+    error,
+    sessionId
   };
 }
 ```
@@ -651,7 +690,7 @@ export function useIntentParser() {
       const response = await fetch('v1/intent-parse/sse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
+        body: JSON.stringify(requestWithSession)
       });
 
       if (!response.ok) {
