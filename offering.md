@@ -126,7 +126,9 @@ The following metrics **require custom development** and are **not included** in
 
 ## 💰 Monthly Cost
 
-**Total Monthly Cost: $2,500 - $3,000/month**
+**Total Monthly Cost: $5,000/month**
+
+**Contract Terms:** Minimum 10-month contract required
 
 **Rate Limits:** Up to 100 requests per second (RPS)
 
